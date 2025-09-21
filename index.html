@@ -1,0 +1,2361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>智能环境控制系统</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: rgba(22, 33, 62, 0.9);
+            --bg-glass: rgba(22, 33, 62, 0.6);
+            --primary: #0f4c75;
+            --primary-light: #3282b8;
+            --success: #27ae60;
+            --danger: #e74c3c;
+            --warning: #f39c12;
+            --info: #3498db;
+            --text-primary: #ecf0f1;
+            --text-secondary: #bdc3c7;
+            --text-muted: #95a5a6;
+            --border: rgba(255, 255, 255, 0.1);
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            --shadow-hover: 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei UI', 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* 顶部导航栏 */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            background: var(--bg-glass);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+        }
+
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .navbar-brand .logo {
+            font-size: 1.8em;
+        }
+
+        .navbar-brand h1 {
+            font-size: 1.4em;
+            font-weight: 600;
+            color: var(--primary-light);
+        }
+
+        .navbar-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9em;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 500;
+            border: 1px solid;
+        }
+
+        .status-badge.online {
+            background: rgba(39, 174, 96, 0.2);
+            border-color: var(--success);
+            color: var(--success);
+        }
+
+        .status-badge.offline {
+            background: rgba(231, 76, 60, 0.2);
+            border-color: var(--danger);
+            color: var(--danger);
+        }
+
+        .status-badge.simulation {
+            background: rgba(243, 156, 18, 0.2);
+            border-color: var(--warning);
+            color: var(--warning);
+        }
+
+        /* 数据模式切换器 */
+        .data-mode-switch {
+            display: flex;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .mode-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            border-radius: 8px;
+            font-size: 0.85em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mode-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .mode-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            transform: translateY(-1px);
+        }
+
+        .mode-btn:hover::before {
+            left: 100%;
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, var(--primary-light), var(--info));
+            color: white;
+            box-shadow: 0 4px 12px rgba(50, 130, 184, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .mode-btn.active::before {
+            display: none;
+        }
+
+        .mode-btn.serial.active {
+            background: linear-gradient(135deg, var(--success), #2ecc71);
+            box-shadow: 0 4px 12px rgba(39, 174, 96, 0.4);
+        }
+
+        .mode-icon {
+            font-size: 1.1em;
+        }
+
+        .mode-text {
+            font-weight: 600;
+        }
+
+        /* 模式指示器动画 */
+        .mode-btn.switching {
+            animation: modeSwitch 0.6s ease;
+        }
+
+        @keyframes modeSwitch {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        /* 串口连接控制 */
+        .serial-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .serial-select {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            font-size: 0.9em;
+            min-width: 120px;
+        }
+
+        .serial-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .serial-btn.connect {
+            background: var(--primary-light);
+            color: white;
+        }
+
+        .serial-btn.disconnect {
+            background: var(--danger);
+            color: white;
+        }
+
+        .serial-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-hover);
+        }
+
+        /* 主容器 */
+        .main-container {
+            margin-top: 70px;
+            padding: 30px;
+            max-width: 1600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* 主要内容网格 - 图表和控制面板并列 */
+        .main-content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        /* 传感器卡片区域 - 横向排列，统一大小 */
+        .sensors-section {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .sensor-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(15px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sensor-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary-light), var(--info));
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        .sensor-card::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.03) 0%, transparent 70%);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
+        }
+
+        .sensor-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: var(--shadow-hover);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .sensor-card:hover::before {
+            opacity: 1;
+        }
+
+        .sensor-card:hover::after {
+            opacity: 1;
+        }
+
+        /* 紧凑型传感器卡片 */
+        .sensor-card.compact {
+            padding: 16px;
+        }
+
+        .sensor-card.compact.temperature {
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(231, 76, 60, 0.08) 100%);
+        }
+
+        .sensor-card.compact.humidity {
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(52, 152, 219, 0.08) 100%);
+        }
+
+        .sensor-card.compact.co2 {
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(46, 204, 113, 0.08) 100%);
+        }
+
+        .sensor-card.compact.light {
+            background: linear-gradient(135deg, var(--bg-card) 0%, rgba(241, 196, 15, 0.08) 100%);
+        }
+
+        .sensor-icon {
+            font-size: 2.4em;
+            margin-bottom: 12px;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-6px); }
+        }
+
+        .sensor-value {
+            font-size: 1.8em;
+            font-weight: 800;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--primary-light), var(--info));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .sensor-label {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        /* 传感器状态指示器增强 */
+        .sensor-status {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 15px rgba(39, 174, 96, 0.8);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 15px rgba(39, 174, 96, 0.8); }
+            50% { box-shadow: 0 0 25px rgba(39, 174, 96, 1); }
+            100% { box-shadow: 0 0 15px rgba(39, 174, 96, 0.8); }
+        }
+
+        .sensor-status.warning {
+            background: var(--warning);
+            box-shadow: 0 0 15px rgba(243, 156, 18, 0.8);
+            animation: pulse-warning 2s infinite;
+        }
+
+        @keyframes pulse-warning {
+            0% { box-shadow: 0 0 15px rgba(243, 156, 18, 0.8); }
+            50% { box-shadow: 0 0 25px rgba(243, 156, 18, 1); }
+            100% { box-shadow: 0 0 15px rgba(243, 156, 18, 0.8); }
+        }
+
+        .sensor-status.danger {
+            background: var(--danger);
+            box-shadow: 0 0 15px rgba(231, 76, 60, 0.8);
+            animation: pulse-danger 1s infinite;
+        }
+
+        @keyframes pulse-danger {
+            0% { box-shadow: 0 0 15px rgba(231, 76, 60, 0.8); }
+            50% { box-shadow: 0 0 30px rgba(231, 76, 60, 1); }
+            100% { box-shadow: 0 0 15px rgba(231, 76, 60, 0.8); }
+        }
+
+        /* 传感器趋势指示器 */
+        .sensor-trend {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 1.2em;
+            opacity: 0.7;
+        }
+
+        .sensor-trend.up {
+            color: var(--danger);
+        }
+
+        .sensor-trend.down {
+            color: var(--info);
+        }
+
+        .sensor-trend.stable {
+            color: var(--success);
+        }
+
+        /* 控制面板 */
+        .control-section {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .control-panel {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 25px;
+        }
+
+        .panel-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: var(--primary-light);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* 设备控制区域 - 胶囊按钮风格 */
+        .device-controls {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group-title {
+            font-size: 0.9em;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            padding-left: 8px;
+        }
+
+        .device-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 24px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .device-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(180deg, var(--primary-light), var(--info));
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        .device-item:hover {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.06) 100%);
+            transform: translateX(8px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        .device-item:hover::before {
+            opacity: 1;
+        }
+
+        .device-item.active {
+            background: linear-gradient(135deg, rgba(39, 174, 96, 0.15) 0%, rgba(39, 174, 96, 0.05) 100%);
+            border-color: rgba(39, 174, 96, 0.3);
+        }
+
+        .device-item.active::before {
+            background: linear-gradient(180deg, var(--success), #2ecc71);
+            opacity: 1;
+        }
+
+        .device-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex: 1;
+        }
+
+        .device-icon-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            height: 48px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .device-item.active .device-icon-wrapper {
+            background: rgba(39, 174, 96, 0.2);
+            box-shadow: 0 0 20px rgba(39, 174, 96, 0.3);
+        }
+
+        .device-icon {
+            font-size: 1.6em;
+            transition: all 0.3s ease;
+        }
+
+        .device-item.active .device-icon {
+            transform: scale(1.1);
+        }
+
+        .device-details {
+            flex: 1;
+        }
+
+        .device-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 1.1em;
+            margin-bottom: 4px;
+        }
+
+        .device-status-text {
+            font-size: 0.85em;
+            color: var(--text-muted);
+            opacity: 0.8;
+        }
+
+        .device-item.active .device-status-text {
+            color: var(--success);
+            opacity: 1;
+        }
+
+        /* 增强的设备开关 */
+        .device-toggle {
+            position: relative;
+            width: 60px;
+            height: 32px;
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            border: 2px solid var(--border);
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .device-toggle::before {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 22px;
+            height: 22px;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 50%;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .device-toggle::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 8px;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            background: var(--danger);
+            border-radius: 50%;
+            opacity: 0.6;
+            transition: all 0.4s ease;
+        }
+
+        .device-toggle.active {
+            background: linear-gradient(135deg, var(--success), #2ecc71);
+            border-color: var(--success);
+            box-shadow: 0 0 20px rgba(39, 174, 96, 0.4);
+        }
+
+        .device-toggle.active::before {
+            transform: translateX(28px);
+            background: linear-gradient(135deg, #ffffff, #f8f9fa);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        }
+
+        .device-toggle.active::after {
+            left: auto;
+            right: 8px;
+            background: var(--success);
+            opacity: 1;
+            box-shadow: 0 0 8px rgba(39, 174, 96, 0.6);
+        }
+
+        /* 设备状态指示灯 */
+        .device-status-led {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            opacity: 0.5;
+            transition: all 0.3s ease;
+        }
+
+        .device-item.active .device-status-led {
+            background: var(--success);
+            opacity: 1;
+            box-shadow: 0 0 12px rgba(39, 174, 96, 0.8);
+            animation: pulse 2s infinite;
+        }
+
+        /* 图表区域 - 2x2网格布局，更紧凑 */
+        .charts-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .chart-panel {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            height: 280px;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .chart-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* 时间选择器增强 */
+        .time-selector {
+            display: flex;
+            gap: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .time-btn {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            border-radius: 8px;
+            font-size: 0.85em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .time-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .time-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            transform: translateY(-1px);
+        }
+
+        .time-btn:hover::before {
+            left: 100%;
+        }
+
+        .time-btn.active {
+            background: linear-gradient(135deg, var(--primary-light), var(--info));
+            color: white;
+            box-shadow: 0 4px 12px rgba(50, 130, 184, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .time-btn.active::before {
+            display: none;
+        }
+
+        /* 图表容器增强 */
+        .chart-panel {
+            background: var(--bg-card);
+            backdrop-filter: blur(15px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 30px;
+            height: 380px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chart-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary-light), var(--info), var(--success));
+            opacity: 0.6;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chart-title {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .chart-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: linear-gradient(180deg, var(--primary-light), var(--info));
+            border-radius: 2px;
+        }
+
+        /* 图表数据点动画 */
+        .chart-container {
+            position: relative;
+            height: 280px;
+        }
+
+        .chart-loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--text-muted);
+            font-size: 0.9em;
+        }
+
+        /* 状态区域 */
+        .status-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        .status-panel {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 25px;
+        }
+
+        /* 事件日志筛选器 */
+        .event-filters {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 6px 14px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .filter-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.4s ease;
+        }
+
+        .filter-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-1px);
+        }
+
+        .filter-btn:hover::before {
+            left: 100%;
+        }
+
+        .filter-btn.active {
+            background: linear-gradient(135deg, var(--primary-light), var(--info));
+            color: white;
+            border-color: var(--primary-light);
+            box-shadow: 0 4px 12px rgba(50, 130, 184, 0.3);
+        }
+
+        .filter-btn.active::before {
+            display: none;
+        }
+
+        /* 事件日志时间轴增强 */
+        .event-timeline {
+            max-height: 320px;
+            overflow-y: auto;
+            padding-right: 12px;
+            position: relative;
+        }
+
+        .event-timeline::before {
+            content: '';
+            position: absolute;
+            left: 12px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, var(--primary-light), var(--info), var(--success));
+            opacity: 0.3;
+            z-index: 0;
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 18px;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 1;
+            opacity: 0;
+            animation: slideInTimeline 0.5s ease forwards;
+        }
+
+        .timeline-item:nth-child(1) { animation-delay: 0.1s; }
+        .timeline-item:nth-child(2) { animation-delay: 0.2s; }
+        .timeline-item:nth-child(3) { animation-delay: 0.3s; }
+        .timeline-item:nth-child(4) { animation-delay: 0.4s; }
+        .timeline-item:nth-child(5) { animation-delay: 0.5s; }
+
+        @keyframes slideInTimeline {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .timeline-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            margin-top: 6px;
+            position: relative;
+            z-index: 2;
+            border: 3px solid var(--bg-card);
+        }
+
+        .timeline-dot::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: inherit;
+        }
+
+        .timeline-dot.system {
+            background: var(--info);
+            box-shadow: 0 0 15px rgba(52, 152, 219, 0.6);
+            animation: pulse-system 2s infinite;
+        }
+
+        @keyframes pulse-system {
+            0%, 100% { box-shadow: 0 0 15px rgba(52, 152, 219, 0.6); }
+            50% { box-shadow: 0 0 25px rgba(52, 152, 219, 0.9); }
+        }
+
+        .timeline-dot.device {
+            background: var(--success);
+            box-shadow: 0 0 15px rgba(39, 174, 96, 0.6);
+            animation: pulse-device 2s infinite;
+        }
+
+        @keyframes pulse-device {
+            0%, 100% { box-shadow: 0 0 15px rgba(39, 174, 96, 0.6); }
+            50% { box-shadow: 0 0 25px rgba(39, 174, 96, 0.9); }
+        }
+
+        .timeline-dot.alert {
+            background: var(--danger);
+            box-shadow: 0 0 15px rgba(231, 76, 60, 0.6);
+            animation: pulse-alert 1.5s infinite;
+        }
+
+        @keyframes pulse-alert {
+            0%, 100% { box-shadow: 0 0 15px rgba(231, 76, 60, 0.6); }
+            50% { box-shadow: 0 0 30px rgba(231, 76, 60, 1); }
+        }
+
+        .timeline-dot.serial {
+            background: var(--warning);
+            box-shadow: 0 0 15px rgba(243, 156, 18, 0.6);
+            animation: pulse-serial 2s infinite;
+        }
+
+        @keyframes pulse-serial {
+            0%, 100% { box-shadow: 0 0 15px rgba(243, 156, 18, 0.6); }
+            50% { box-shadow: 0 0 25px rgba(243, 156, 18, 0.9); }
+        }
+
+        .timeline-content {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.3s ease;
+        }
+
+        .timeline-content:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateX(4px);
+        }
+
+        .timeline-time {
+            font-size: 0.8em;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .timeline-message {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
+
+        .timeline-type {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.7em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .timeline-type.system {
+            background: rgba(52, 152, 219, 0.2);
+            color: var(--info);
+            border: 1px solid rgba(52, 152, 219, 0.3);
+        }
+
+        .timeline-type.device {
+            background: rgba(39, 174, 96, 0.2);
+            color: var(--success);
+            border: 1px solid rgba(39, 174, 96, 0.3);
+        }
+
+        .timeline-type.alert {
+            background: rgba(231, 76, 60, 0.2);
+            color: var(--danger);
+            border: 1px solid rgba(231, 76, 60, 0.3);
+        }
+
+        .timeline-type.serial {
+            background: rgba(243, 156, 18, 0.2);
+            color: var(--warning);
+            border: 1px solid rgba(243, 156, 18, 0.3);
+        }
+
+        .timeline-type.threshold {
+            background: rgba(155, 89, 182, 0.2);
+            color: #9b59b6;
+            border: 1px solid rgba(155, 89, 182, 0.3);
+        }
+
+        /* 设备状态列表 */
+        .device-status-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            border-left: 4px solid var(--border);
+        }
+
+        .status-item.active {
+            border-left-color: var(--success);
+            background: rgba(39, 174, 96, 0.1);
+        }
+
+        .status-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+
+        .status-indicator.active {
+            background: var(--success);
+            box-shadow: 0 0 8px rgba(39, 174, 96, 0.6);
+        }
+
+        .status-text {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 1200px) {
+            .main-content-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .sensors-section {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .charts-section {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 0 15px;
+                flex-direction: column;
+                height: auto;
+                padding: 15px;
+            }
+            
+            .main-container {
+                margin-top: 120px;
+                padding: 15px;
+            }
+            
+            .sensors-section {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .charts-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .status-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .serial-controls {
+                flex-direction: column;
+                gap: 8px;
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .sensors-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary-light);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--info);
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <span class="logo">🏠</span>
+            <h1>智能环境控制系统</h1>
+        </div>
+        
+        <div class="navbar-status">
+            <span class="status-badge online" id="system-status">系统运行中</span>
+            <div class="data-mode-switch">
+                <button class="mode-btn" id="serial-mode-btn" onclick="switchDataMode('serial')">
+                    <span class="mode-icon">📡</span>
+                    <span class="mode-text">串口数据</span>
+                </button>
+                <button class="mode-btn active" id="simulation-mode-btn" onclick="switchDataMode('simulation')">
+                    <span class="mode-icon">🎲</span>
+                    <span class="mode-text">模拟数据</span>
+                </button>
+            </div>
+        </div>
+        
+        <div class="serial-controls">
+            <select id="port-select" class="serial-select">
+                <option value="">选择串口...</option>
+            </select>
+            <select id="baudrate-select" class="serial-select">
+                <option value="9600">9600</option>
+                <option value="19200">19200</option>
+                <option value="38400">38400</option>
+                <option value="57600">57600</option>
+                <option value="115200" selected>115200</option>
+            </select>
+            <button id="connect-btn" class="serial-btn connect" onclick="toggleSerialConnection()">连接</button>
+        </div>
+    </nav>
+
+    <!-- 主容器 -->
+    <div class="main-container">
+        <!-- 主要内容区域 - 图表和控制面板并列 -->
+        <div class="main-content-grid">
+            <!-- 图表区域 - 左侧 -->
+            <div class="charts-section">
+                <div class="chart-panel">
+                    <div class="chart-header">
+                        <h3 class="chart-title">🌡️ 温度趋势</h3>
+                        <div class="time-selector">
+                            <button class="time-btn active" data-range="5m">5分钟</button>
+                            <button class="time-btn" data-range="1h">1小时</button>
+                            <button class="time-btn" data-range="24h">24小时</button>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="temperatureChart"></canvas>
+                        <div class="chart-loading" style="display: none;">加载中...</div>
+                    </div>
+                </div>
+                
+                <div class="chart-panel">
+                    <div class="chart-header">
+                        <h3 class="chart-title">💧 湿度趋势</h3>
+                        <div class="time-selector">
+                            <button class="time-btn active" data-range="5m">5分钟</button>
+                            <button class="time-btn" data-range="1h">1小时</button>
+                            <button class="time-btn" data-range="24h">24小时</button>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="humidityChart"></canvas>
+                        <div class="chart-loading" style="display: none;">加载中...</div>
+                    </div>
+                </div>
+                
+                <div class="chart-panel">
+                    <div class="chart-header">
+                        <h3 class="chart-title">🌬️ CO₂趋势</h3>
+                        <div class="time-selector">
+                            <button class="time-btn active" data-range="5m">5分钟</button>
+                            <button class="time-btn" data-range="1h">1小时</button>
+                            <button class="time-btn" data-range="24h">24小时</button>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="co2Chart"></canvas>
+                        <div class="chart-loading" style="display: none;">加载中...</div>
+                    </div>
+                </div>
+                
+                <div class="chart-panel">
+                    <div class="chart-header">
+                        <h3 class="chart-title">🌞 光照强度趋势</h3>
+                        <div class="time-selector">
+                            <button class="time-btn active" data-range="5m">5分钟</button>
+                            <button class="time-btn" data-range="1h">1小时</button>
+                            <button class="time-btn" data-range="24h">24小时</button>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="lightChart"></canvas>
+                        <div class="chart-loading" style="display: none;">加载中...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 控制面板区域 - 右侧 -->
+            <div class="control-section">
+                <div class="control-panel">
+                    <div class="panel-title">
+                        <span>🎛️</span>
+                        设备控制
+                    </div>
+                    <div class="device-controls">
+                        <div class="control-group">
+                            <div class="control-group-title">温度控制</div>
+                            <div class="device-item" id="heating-item">
+                                <div class="device-status-led"></div>
+                                <div class="device-info">
+                                    <div class="device-icon-wrapper">
+                                        <span class="device-icon">🔥</span>
+                                    </div>
+                                    <div class="device-details">
+                                        <div class="device-name">加热系统</div>
+                                        <div class="device-status-text">已停止 · 待机中</div>
+                                    </div>
+                                </div>
+                                <div class="device-toggle" id="heating-toggle" onclick="toggleDevice('heating')"></div>
+                            </div>
+                            
+                            <div class="device-item" id="cooling-item">
+                                <div class="device-status-led"></div>
+                                <div class="device-info">
+                                    <div class="device-icon-wrapper">
+                                        <span class="device-icon">❄️</span>
+                                    </div>
+                                    <div class="device-details">
+                                        <div class="device-name">制冷系统</div>
+                                        <div class="device-status-text">已停止 · 待机中</div>
+                                    </div>
+                                </div>
+                                <div class="device-toggle" id="cooling-toggle" onclick="toggleDevice('cooling')"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="control-group">
+                            <div class="control-group-title">湿度控制</div>
+                            <div class="device-item" id="humidify-item">
+                                <div class="device-status-led"></div>
+                                <div class="device-info">
+                                    <div class="device-icon-wrapper">
+                                        <span class="device-icon">💨</span>
+                                    </div>
+                                    <div class="device-details">
+                                        <div class="device-name">加湿系统</div>
+                                        <div class="device-status-text">已停止 · 待机中</div>
+                                    </div>
+                                </div>
+                                <div class="device-toggle" id="humidify-toggle" onclick="toggleDevice('humidify')"></div>
+                            </div>
+                            
+                            <div class="device-item" id="dehumidify-item">
+                                <div class="device-status-led"></div>
+                                <div class="device-info">
+                                    <div class="device-icon-wrapper">
+                                        <span class="device-icon">🌵</span>
+                                    </div>
+                                    <div class="device-details">
+                                        <div class="device-name">除湿系统</div>
+                                        <div class="device-status-text">已停止 · 待机中</div>
+                                    </div>
+                                </div>
+                                <div class="device-toggle" id="dehumidify-toggle" onclick="toggleDevice('dehumidify')"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="control-group">
+                            <div class="control-group-title">空气质量</div>
+                            <div class="device-item" id="ventilation-item">
+                                <div class="device-status-led"></div>
+                                <div class="device-info">
+                                    <div class="device-icon-wrapper">
+                                        <span class="device-icon">🌪️</span>
+                                    </div>
+                                    <div class="device-details">
+                                        <div class="device-name">通风系统</div>
+                                        <div class="device-status-text">已停止 · 待机中</div>
+                                    </div>
+                                </div>
+                                <div class="device-toggle" id="ventilation-toggle" onclick="toggleDevice('ventilation')"></div>
+                            </div>
+                            
+                            <div class="device-item" id="close_vent-item">
+                                <div class="device-status-led"></div>
+                                <div class="device-info">
+                                    <div class="device-icon-wrapper">
+                                        <span class="device-icon">🚫</span>
+                                    </div>
+                                    <div class="device-details">
+                                        <div class="device-name">关闭通风</div>
+                                        <div class="device-status-text">已停止 · 待机中</div>
+                                    </div>
+                                </div>
+                                <div class="device-toggle" id="close_vent-toggle" onclick="toggleDevice('close_vent')"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 传感器卡片区域 - 横向排列在下方 -->
+        <div class="sensors-section">
+            <div class="sensor-card compact temperature" id="temperature-card">
+                <div class="sensor-trend stable" id="temp-trend">→</div>
+                <div class="sensor-status" id="temp-status"></div>
+                <div class="sensor-icon">🌡️</div>
+                <div class="sensor-value" id="temperature-value">25.0°C</div>
+                <div class="sensor-label">环境温度</div>
+            </div>
+            
+            <div class="sensor-card compact humidity" id="humidity-card">
+                <div class="sensor-trend stable" id="humidity-trend">→</div>
+                <div class="sensor-status" id="humidity-status"></div>
+                <div class="sensor-icon">💧</div>
+                <div class="sensor-value" id="humidity-value">60.0%</div>
+                <div class="sensor-label">空气湿度</div>
+            </div>
+            
+            <div class="sensor-card compact co2" id="co2-card">
+                <div class="sensor-trend stable" id="co2-trend">→</div>
+                <div class="sensor-status" id="co2-status"></div>
+                <div class="sensor-icon">🌬️</div>
+                <div class="sensor-value" id="co2-value">400ppm</div>
+                <div class="sensor-label">CO₂浓度</div>
+            </div>
+            
+            <div class="sensor-card compact light" id="light-card">
+                <div class="sensor-trend stable" id="light-trend">→</div>
+                <div class="sensor-status" id="light-status"></div>
+                <div class="sensor-icon">🌞</div>
+                <div class="sensor-value" id="light-value">350lx</div>
+                <div class="sensor-label">光照强度</div>
+            </div>
+        </div>
+
+        <!-- 状态区域 -->
+        <div class="status-section">
+            <div class="status-panel">
+                <div class="panel-title">
+                    <span>📊</span>
+                    设备状态
+                </div>
+                <div class="device-status-list" id="device-status">
+                    <div class="status-item">
+                        <div class="status-info">
+                            <span class="status-indicator"></span>
+                            <span>🔥 加热系统</span>
+                        </div>
+                        <span class="status-text">已停止</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-info">
+                            <span class="status-indicator"></span>
+                            <span>❄️ 制冷系统</span>
+                        </div>
+                        <span class="status-text">已停止</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-info">
+                            <span class="status-indicator"></span>
+                            <span>💨 加湿系统</span>
+                        </div>
+                        <span class="status-text">已停止</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-info">
+                            <span class="status-indicator"></span>
+                            <span>🌵 除湿系统</span>
+                        </div>
+                        <span class="status-text">已停止</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-info">
+                            <span class="status-indicator"></span>
+                            <span>🌪️ 通风系统</span>
+                        </div>
+                        <span class="status-text">已停止</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-info">
+                            <span class="status-indicator"></span>
+                            <span>🚫 关闭通风</span>
+                        </div>
+                        <span class="status-text">已停止</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-panel">
+                <div class="panel-title">
+                    <span>📝</span>
+                    事件日志
+                </div>
+                <div class="event-filters">
+                    <button class="filter-btn active" data-filter="all">全部</button>
+                    <button class="filter-btn" data-filter="system">系统</button>
+                    <button class="filter-btn" data-filter="device">设备</button>
+                    <button class="filter-btn" data-filter="threshold">阈值</button>
+                    <button class="filter-btn" data-filter="serial">串口</button>
+                </div>
+                <div class="event-timeline" id="event-log">
+                    <div class="timeline-item">
+                        <div class="timeline-dot system"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">23:00:00</div>
+                            <div class="timeline-message">智能环境控制系统启动</div>
+                            <span class="timeline-type system">系统</span>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot system"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">23:00:01</div>
+                            <div class="timeline-message">开始环境数据监控</div>
+                            <span class="timeline-type system">系统</span>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot serial"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">23:00:02</div>
+                            <div class="timeline-message">串口功能已就绪，等待连接</div>
+                            <span class="timeline-type serial">串口</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // WebSocket连接
+        const socket = io();
+        
+        // 数据模式管理
+        let currentDataMode = 'simulation'; // 'serial' 或 'simulation'
+        
+        // 图表配置
+        const chartConfig = {
+            type: 'line',
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#ECF0F1'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#ECF0F1'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#ECF0F1'
+                        }
+                    }
+                },
+                elements: {
+                    line: {
+                        tension: 0.4
+                    }
+                }
+            }
+        };
+
+        // 图表变量声明（将在reinitializeCharts中初始化）
+        let tempChart, humidityChart, co2Chart, lightChart;
+
+        // 数据历史 - 扩展为四个指标
+        const dataHistory = {
+            temperature: [],
+            humidity: [],
+            co2: [],
+            light: [],
+            labels: []
+        };
+
+        // WebSocket事件处理
+        socket.on('connect', function() {
+            console.log('Connected to server');
+        });
+
+        socket.on('data_update', function(data) {
+            // 更新串口连接状态
+            if (data.serial_connected !== undefined) {
+                isSerialConnected = data.serial_connected;
+            }
+            
+            // 更新数据模式
+            if (data.data_mode !== undefined) {
+                currentDataMode = data.data_mode;
+            }
+            
+            updateSensorValues(data.data);
+            updateDeviceStates(data.devices);
+            updateEventLog(data.events);
+            updateCharts(data.data);
+        });
+
+        // 更新传感器数值
+        function updateSensorValues(data) {
+            // 检查是否为串口模式且未连接，或者数据为null
+            const isSerialModeDisconnected = (currentDataMode === 'serial' && !isSerialConnected) || 
+                                           (data.temperature === null || data.temperature === undefined);
+            
+            if (isSerialModeDisconnected) {
+                // 串口模式但未连接时显示 "--"
+                document.getElementById('temperature-value').textContent = '--°C';
+                document.getElementById('humidity-value').textContent = '--%';
+                document.getElementById('co2-value').textContent = '--ppm';
+                document.getElementById('light-value').textContent = '--lx';
+                
+                // 状态指示器显示为未连接状态
+                ['temp-status', 'humidity-status', 'co2-status', 'light-status'].forEach(id => {
+                    const element = document.getElementById(id);
+                    element.className = 'sensor-status warning';
+                });
+            } else {
+                // 正常显示数据
+                document.getElementById('temperature-value').textContent = data.temperature.toFixed(1) + '°C';
+                document.getElementById('humidity-value').textContent = data.humidity.toFixed(1) + '%';
+                document.getElementById('co2-value').textContent = Math.round(data.co2) + 'ppm';
+                document.getElementById('light-value').textContent = Math.round(data.light) + 'lx';
+                
+                // 更新状态指示器
+                updateSensorStatus('temp-status', data.temperature, 18, 28);
+                updateSensorStatus('humidity-status', data.humidity, 40, 70);
+                updateSensorStatus('co2-status', data.co2, 0, 1000);
+                updateSensorStatus('light-status', data.light, 100, 800);
+            }
+        }
+
+        // 更新传感器状态指示器
+        function updateSensorStatus(elementId, value, minSafe, maxSafe) {
+            const element = document.getElementById(elementId);
+            element.className = 'sensor-status';
+            
+            if (value < minSafe || value > maxSafe) {
+                element.classList.add('danger');
+            } else if (value < minSafe * 1.1 || value > maxSafe * 0.9) {
+                element.classList.add('warning');
+            }
+        }
+
+        // 更新设备状态
+        function updateDeviceStates(devices) {
+            const deviceNames = {
+                'heating': '🔥 加热系统',
+                'cooling': '❄️ 制冷系统',
+                'humidify': '💨 加湿系统',
+                'dehumidify': '🌵 除湿系统',
+                'ventilation': '🌪️ 通风系统',
+                'close_vent': '🚫 关闭通风'
+            };
+
+            let statusHtml = '';
+            for (const [device, state] of Object.entries(devices)) {
+                const name = deviceNames[device] || device;
+                const statusClass = state ? 'active' : '';
+                const statusText = state ? '运行中' : '已停止';
+                
+                statusHtml += `
+                    <div class="status-item ${statusClass}">
+                        <div class="status-info">
+                            <span class="status-indicator ${state ? 'active' : ''}"></span>
+                            <span>${name}</span>
+                        </div>
+                        <span class="status-text">${statusText}</span>
+                    </div>
+                `;
+                
+                // 更新控制开关状态
+                const toggle = document.getElementById(device + '-toggle');
+                const item = document.getElementById(device + '-item');
+                if (toggle && item) {
+                    toggle.className = `device-toggle ${state ? 'active' : ''}`;
+                    item.className = `device-item ${state ? 'active' : ''}`;
+                    
+                    // 更新状态文本
+                    const statusTextElement = item.querySelector('.device-status-text');
+                    if (statusTextElement) {
+                        const currentTime = new Date().toLocaleTimeString();
+                        if (state) {
+                            statusTextElement.textContent = `运行中 · ${currentTime}`;
+                        } else {
+                            statusTextElement.textContent = '已停止 · 待机中';
+                        }
+                    }
+                }
+            }
+            document.getElementById('device-status').innerHTML = statusHtml;
+        }
+
+        // 更新事件日志
+        function updateEventLog(events) {
+            const logContainer = document.getElementById('event-log');
+            let logHtml = '';
+            
+            events.forEach(event => {
+                const typeClass = event.type.toLowerCase();
+                logHtml += `
+                    <div class="timeline-item">
+                        <div class="timeline-dot ${typeClass}"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">${event.timestamp}</div>
+                            <div class="timeline-message">
+                                ${event.message}
+                                <span class="timeline-type ${typeClass}">${event.type}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            logContainer.innerHTML = logHtml;
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // 更新图表 - 支持四个指标
+        function updateCharts(data) {
+            const now = new Date().toLocaleTimeString();
+            
+            // 检查是否为串口模式且未连接，或者数据为null
+            const isSerialModeDisconnected = (currentDataMode === 'serial' && !isSerialConnected) || 
+                                           (data.temperature === null || data.temperature === undefined);
+            
+            if (!isSerialModeDisconnected) {
+                // 只有在有有效数据时才更新图表
+                dataHistory.labels.push(now);
+                dataHistory.temperature.push(data.temperature);
+                dataHistory.humidity.push(data.humidity);
+                dataHistory.co2.push(data.co2);
+                dataHistory.light.push(data.light);
+                
+                // 保持最近20个数据点
+                if (dataHistory.labels.length > 20) {
+                    dataHistory.labels.shift();
+                    dataHistory.temperature.shift();
+                    dataHistory.humidity.shift();
+                    dataHistory.co2.shift();
+                    dataHistory.light.shift();
+                }
+            }
+            
+            // 更新所有图表
+            if (tempChart) {
+                if (isSerialModeDisconnected) {
+                    // 串口模式未连接时显示空图表
+                    tempChart.data.labels = ['等待数据...'];
+                    tempChart.data.datasets[0].data = [null];
+                } else {
+                    tempChart.data.labels = [...dataHistory.labels];
+                    tempChart.data.datasets[0].data = [...dataHistory.temperature];
+                }
+                tempChart.update('none');
+            }
+            
+            if (humidityChart) {
+                if (isSerialModeDisconnected) {
+                    humidityChart.data.labels = ['等待数据...'];
+                    humidityChart.data.datasets[0].data = [null];
+                } else {
+                    humidityChart.data.labels = [...dataHistory.labels];
+                    humidityChart.data.datasets[0].data = [...dataHistory.humidity];
+                }
+                humidityChart.update('none');
+            }
+            
+            if (co2Chart) {
+                if (isSerialModeDisconnected) {
+                    co2Chart.data.labels = ['等待数据...'];
+                    co2Chart.data.datasets[0].data = [null];
+                } else {
+                    co2Chart.data.labels = [...dataHistory.labels];
+                    co2Chart.data.datasets[0].data = [...dataHistory.co2];
+                }
+                co2Chart.update('none');
+            }
+            
+            if (lightChart) {
+                if (isSerialModeDisconnected) {
+                    lightChart.data.labels = ['等待数据...'];
+                    lightChart.data.datasets[0].data = [null];
+                } else {
+                    lightChart.data.labels = [...dataHistory.labels];
+                    lightChart.data.datasets[0].data = [...dataHistory.light];
+                }
+                lightChart.update('none');
+            }
+        }
+
+        // 数据模式切换
+        function switchDataMode(mode) {
+            if (currentDataMode === mode) return;
+            
+            const serialBtn = document.getElementById('serial-mode-btn');
+            const simulationBtn = document.getElementById('simulation-mode-btn');
+            
+            // 添加切换动画
+            const activeBtn = mode === 'serial' ? serialBtn : simulationBtn;
+            const inactiveBtn = mode === 'serial' ? simulationBtn : serialBtn;
+            
+            activeBtn.classList.add('switching');
+            setTimeout(() => activeBtn.classList.remove('switching'), 600);
+            
+            // 更新按钮状态
+            serialBtn.classList.toggle('active', mode === 'serial');
+            simulationBtn.classList.toggle('active', mode === 'simulation');
+            
+            if (mode === 'serial') {
+                serialBtn.classList.add('serial');
+            } else {
+                serialBtn.classList.remove('serial');
+            }
+            
+            // 发送模式切换请求到后端
+            fetch('/api/data/mode', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    mode: mode
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    currentDataMode = mode;
+                    console.log(`数据模式已切换到: ${mode === 'serial' ? '串口数据' : '模拟数据'}`);
+                    
+                    // 添加事件日志
+                    addEventLog({
+                        type: 'system',
+                        message: `数据模式切换到${mode === 'serial' ? '串口数据' : '模拟数据'}`,
+                        timestamp: new Date().toLocaleTimeString()
+                    });
+                    
+                    // 如果切换到串口模式但未连接，提示用户
+                    if (mode === 'serial' && !isSerialConnected) {
+                        setTimeout(() => {
+                            alert('提示：当前未连接串口，请先连接串口设备以获取真实数据。');
+                        }, 500);
+                    }
+                } else {
+                    console.error('模式切换失败:', data.message);
+                    // 恢复按钮状态
+                    serialBtn.classList.toggle('active', currentDataMode === 'serial');
+                    simulationBtn.classList.toggle('active', currentDataMode === 'simulation');
+                }
+            })
+            .catch(error => {
+                console.error('模式切换请求失败:', error);
+                // 恢复按钮状态
+                serialBtn.classList.toggle('active', currentDataMode === 'serial');
+                simulationBtn.classList.toggle('active', currentDataMode === 'simulation');
+            });
+        }
+
+        // 添加事件日志条目
+        function addEventLog(event) {
+            const logContainer = document.getElementById('event-log');
+            const typeClass = event.type.toLowerCase();
+            
+            const newItem = document.createElement('div');
+            newItem.className = 'timeline-item';
+            newItem.innerHTML = `
+                <div class="timeline-dot ${typeClass}"></div>
+                <div class="timeline-content">
+                    <div class="timeline-time">${event.timestamp}</div>
+                    <div class="timeline-message">${event.message}</div>
+                    <span class="timeline-type ${typeClass}">${event.type}</span>
+                </div>
+            `;
+            
+            logContainer.insertBefore(newItem, logContainer.firstChild);
+            
+            // 限制日志条目数量
+            const items = logContainer.querySelectorAll('.timeline-item');
+            if (items.length > 10) {
+                logContainer.removeChild(items[items.length - 1]);
+            }
+        }
+
+        // 设备控制
+        function toggleDevice(device) {
+            const toggle = document.getElementById(device + '-toggle');
+            const isActive = toggle.classList.contains('active');
+            const action = isActive ? 'off' : 'on';
+            
+            fetch('/api/control', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    device: device,
+                    action: action
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    toggle.className = `device-toggle ${data.state ? 'active' : ''}`;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+        // 串口连接相关函数
+        let isSerialConnected = false;
+
+        // 加载可用串口列表
+        function loadSerialPorts() {
+            fetch('/api/serial/ports')
+                .then(response => response.json())
+                .then(data => {
+                    const portSelect = document.getElementById('port-select');
+                    portSelect.innerHTML = '<option value="">选择串口...</option>';
+                    
+                    if (data.serial_available && data.ports) {
+                        data.ports.forEach(port => {
+                            const option = document.createElement('option');
+                            option.value = port;
+                            option.textContent = port;
+                            portSelect.appendChild(option);
+                        });
+                    } else {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = '串口功能不可用';
+                        option.disabled = true;
+                        portSelect.appendChild(option);
+                    }
+                })
+                .catch(error => {
+                    console.error('加载串口列表失败:', error);
+                });
+        }
+
+        // 切换串口连接状态
+        function toggleSerialConnection() {
+            const connectBtn = document.getElementById('connect-btn');
+            const portSelect = document.getElementById('port-select');
+            const baudrateSelect = document.getElementById('baudrate-select');
+            
+            if (isSerialConnected) {
+                // 断开连接
+                fetch('/api/serial/disconnect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        isSerialConnected = false;
+                        connectBtn.textContent = '连接';
+                        connectBtn.className = 'serial-btn connect';
+                        portSelect.disabled = false;
+                        baudrateSelect.disabled = false;
+                        updateSerialStatus(false, true);
+                    }
+                })
+                .catch(error => {
+                    console.error('断开串口失败:', error);
+                });
+            } else {
+                // 建立连接
+                const port = portSelect.value;
+                const baudrate = parseInt(baudrateSelect.value);
+                
+                if (!port) {
+                    alert('请选择串口');
+                    return;
+                }
+                
+                fetch('/api/serial/connect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        port: port,
+                        baudrate: baudrate
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        isSerialConnected = true;
+                        connectBtn.textContent = '断开';
+                        connectBtn.className = 'serial-btn disconnect';
+                        portSelect.disabled = true;
+                        baudrateSelect.disabled = true;
+                        updateSerialStatus(true, false);
+                    } else {
+                        alert('连接失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('连接串口失败:', error);
+                    alert('连接失败: ' + error.message);
+                });
+            }
+        }
+
+        // 更新串口状态显示
+        function updateSerialStatus(connected, simulation) {
+            const dataModeBadge = document.getElementById('data-mode-badge');
+            
+            if (connected) {
+                dataModeBadge.textContent = '真实数据';
+                dataModeBadge.className = 'status-badge online';
+            } else {
+                dataModeBadge.textContent = '模拟数据';
+                dataModeBadge.className = 'status-badge simulation';
+            }
+        }
+
+        // 检查串口连接状态
+        function checkSerialStatus() {
+            fetch('/api/serial/status')
+                .then(response => response.json())
+                .then(data => {
+                    isSerialConnected = data.connected;
+                    const connectBtn = document.getElementById('connect-btn');
+                    const portSelect = document.getElementById('port-select');
+                    const baudrateSelect = document.getElementById('baudrate-select');
+                    
+                    if (isSerialConnected) {
+                        connectBtn.textContent = '断开';
+                        connectBtn.className = 'serial-btn disconnect';
+                        portSelect.disabled = true;
+                        baudrateSelect.disabled = true;
+                        updateSerialStatus(true, data.use_simulation);
+                    } else {
+                        connectBtn.textContent = '连接';
+                        connectBtn.className = 'serial-btn connect';
+                        portSelect.disabled = false;
+                        baudrateSelect.disabled = false;
+                        updateSerialStatus(false, true);
+                    }
+                })
+                .catch(error => {
+                    console.error('检查串口状态失败:', error);
+                });
+        }
+
+        // 初始化数据加载
+        fetch('/api/data')
+            .then(response => response.json())
+            .then(data => {
+                updateSensorValues(data.data);
+                updateDeviceStates(data.devices);
+                updateEventLog(data.events);
+            });
+
+        // 事件筛选功能
+        let currentFilter = 'all';
+        let allEvents = [];
+
+        function initEventFilters() {
+            const filterBtns = document.querySelectorAll('.filter-btn');
+            filterBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    // 更新按钮状态
+                    filterBtns.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // 更新筛选器
+                    currentFilter = this.dataset.filter;
+                    filterEvents();
+                });
+            });
+        }
+
+        function filterEvents() {
+            const filteredEvents = currentFilter === 'all' 
+                ? allEvents 
+                : allEvents.filter(event => event.type.toLowerCase() === currentFilter);
+            
+            renderEventLog(filteredEvents);
+        }
+
+        function renderEventLog(events) {
+            const logContainer = document.getElementById('event-log');
+            let logHtml = '';
+            
+            events.forEach((event, index) => {
+                const typeClass = event.type.toLowerCase();
+                logHtml += `
+                    <div class="timeline-item" style="animation-delay: ${index * 0.1}s">
+                        <div class="timeline-dot ${typeClass}"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">${event.timestamp}</div>
+                            <div class="timeline-message">${event.message}</div>
+                            <span class="timeline-type ${typeClass}">${event.type}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            logContainer.innerHTML = logHtml;
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // 时间范围选择器功能
+        function initTimeSelectors() {
+            const timeSelectors = document.querySelectorAll('.time-selector');
+            timeSelectors.forEach(selector => {
+                const buttons = selector.querySelectorAll('.time-btn');
+                buttons.forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        // 更新按钮状态
+                        buttons.forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
+                        
+                        // 更新图表时间范围
+                        const range = this.dataset.range;
+                        updateChartTimeRange(range);
+                    });
+                });
+            });
+        }
+
+        function updateChartTimeRange(range) {
+            // 根据时间范围更新图表数据
+            console.log('更新图表时间范围:', range);
+            // 这里可以添加实际的图表数据更新逻辑
+        }
+
+        // 传感器趋势指示器更新
+        let previousValues = {
+            temperature: null,
+            humidity: null,
+            co2: null,
+            light: null
+        };
+
+        function updateSensorTrends(data) {
+            const sensors = ['temperature', 'humidity', 'co2', 'light'];
+            
+            sensors.forEach(sensor => {
+                const currentValue = data[sensor];
+                const previousValue = previousValues[sensor];
+                const trendElement = document.getElementById(sensor + '-trend');
+                
+                if (previousValue !== null && trendElement) {
+                    const diff = currentValue - previousValue;
+                    if (Math.abs(diff) > 0.1) { // 阈值可调整
+                        if (diff > 0) {
+                            trendElement.textContent = '↗';
+                            trendElement.className = 'sensor-trend up';
+                        } else {
+                            trendElement.textContent = '↘';
+                            trendElement.className = 'sensor-trend down';
+                        }
+                    } else {
+                        trendElement.textContent = '→';
+                        trendElement.className = 'sensor-trend stable';
+                    }
+                }
+                
+                previousValues[sensor] = currentValue;
+            });
+        }
+
+        // 增强的图表配置
+        const enhancedChartConfig = {
+            type: 'line',
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.08)',
+                            lineWidth: 1
+                        },
+                        ticks: {
+                            color: '#ECF0F1',
+                            font: {
+                                size: 11
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)',
+                            lineWidth: 1
+                        },
+                        ticks: {
+                            color: '#ECF0F1',
+                            font: {
+                                size: 11
+                            },
+                            maxTicksLimit: 8
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#ECF0F1',
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(22, 33, 62, 0.95)',
+                        titleColor: '#ECF0F1',
+                        bodyColor: '#BDC3C7',
+                        borderColor: 'rgba(255, 255, 255, 0.2)',
+                        borderWidth: 1
+                    }
+                },
+                elements: {
+                    line: {
+                        tension: 0.4,
+                        borderWidth: 3
+                    },
+                    point: {
+                        radius: 4,
+                        hoverRadius: 6,
+                        borderWidth: 2
+                    }
+                },
+                animation: {
+                    duration: 750,
+                    easing: 'easeInOutQuart'
+                }
+            }
+        };
+
+        // 重新初始化图表 - 四个图表
+        function reinitializeCharts() {
+            // 销毁现有图表
+            if (tempChart) tempChart.destroy();
+            if (humidityChart) humidityChart.destroy();
+            if (co2Chart) co2Chart.destroy();
+            if (lightChart) lightChart.destroy();
+
+            // 创建四个增强图表
+            tempChart = new Chart(document.getElementById('temperatureChart'), {
+                ...enhancedChartConfig,
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '温度 (°C)',
+                        data: [],
+                        borderColor: '#E74C3C',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        fill: true,
+                        pointBackgroundColor: '#E74C3C',
+                        pointBorderColor: '#FFFFFF'
+                    }]
+                }
+            });
+
+            humidityChart = new Chart(document.getElementById('humidityChart'), {
+                ...enhancedChartConfig,
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '湿度 (%)',
+                        data: [],
+                        borderColor: '#3498DB',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        fill: true,
+                        pointBackgroundColor: '#3498DB',
+                        pointBorderColor: '#FFFFFF'
+                    }]
+                }
+            });
+
+            co2Chart = new Chart(document.getElementById('co2Chart'), {
+                ...enhancedChartConfig,
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'CO₂ (ppm)',
+                        data: [],
+                        borderColor: '#2ECC71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                        fill: true,
+                        pointBackgroundColor: '#2ECC71',
+                        pointBorderColor: '#FFFFFF'
+                    }]
+                }
+            });
+
+            lightChart = new Chart(document.getElementById('lightChart'), {
+                ...enhancedChartConfig,
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '光照强度 (lx)',
+                        data: [],
+                        borderColor: '#F1C40F',
+                        backgroundColor: 'rgba(241, 196, 15, 0.1)',
+                        fill: true,
+                        pointBackgroundColor: '#F1C40F',
+                        pointBorderColor: '#FFFFFF'
+                    }]
+                }
+            });
+        }
+
+        // 页面加载完成后初始化所有功能
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSerialPorts();
+            checkSerialStatus();
+            initEventFilters();
+            initTimeSelectors();
+            reinitializeCharts();
+            
+            // 初始化数据模式
+            checkDataMode();
+            
+            // 定期刷新串口列表（每30秒）
+            setInterval(loadSerialPorts, 30000);
+        });
+
+        // 检查当前数据模式
+        function checkDataMode() {
+            fetch('/api/data/mode')
+                .then(response => response.json())
+                .then(data => {
+                    currentDataMode = data.mode;
+                    const serialBtn = document.getElementById('serial-mode-btn');
+                    const simulationBtn = document.getElementById('simulation-mode-btn');
+                    
+                    serialBtn.classList.toggle('active', data.mode === 'serial');
+                    simulationBtn.classList.toggle('active', data.mode === 'simulation');
+                    
+                    if (data.mode === 'serial') {
+                        serialBtn.classList.add('serial');
+                    }
+                })
+                .catch(error => {
+                    console.error('检查数据模式失败:', error);
+                });
+        }
+
+        // 重写更新传感器数值函数以包含趋势
+        const originalUpdateSensorValues = updateSensorValues;
+        updateSensorValues = function(data) {
+            originalUpdateSensorValues(data);
+            updateSensorTrends(data);
+        };
+
+        // 重写更新事件日志函数
+        updateEventLog = function(events) {
+            allEvents = events;
+            filterEvents();
+        };
+    </script>
+</body>
+</html>
